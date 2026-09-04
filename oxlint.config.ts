@@ -17,7 +17,12 @@ export default defineConfig({
     reportUnusedDisableDirectives: "error",
   },
 
-  ignorePatterns: ["node_modules/**", "skills/install-guardrails/assets/**", "src/anti-slop/**"],
+  ignorePatterns: [
+    "node_modules/**",
+    "skills/install-guardrails/assets/**",
+    "src/anti-slop/**",
+    "examples/**",
+  ],
 
   jsPlugins: [
     { name: "guardrails", specifier: "./src/index.ts" },

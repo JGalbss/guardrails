@@ -117,6 +117,248 @@ export default defineConfig({
 
 A JSON config cannot import the preset. Register the plugin entry points and list each rule instead, or switch to `oxlint.config.ts`.
 
+## Example
+
+`examples/before.ts` is a small Effect program written the way a coding agent often writes it. Comments explain each step, one-use helpers wrap each piece, boolean flags steer the behavior, and casts paper over `unknown`. It compiles.
+
+```ts
+import { Context, Effect } from "effect";
+
+// Shape of a customer as it comes back from the repository
+export interface CustomerShape {
+  id: string;
+  email: string;
+  status: string;
+  metadata: Record<string, unknown>;
+}
+
+// Shape of one order line
+export interface LineShape {
+  sku: string;
+  unitAmount: number;
+  quantity: number;
+}
+
+export interface OrderShape {
+  id: string;
+  lines: Array<LineShape>;
+}
+
+export interface InvoiceShape {
+  customerId: string;
+  total: number;
+  lineCount: number;
+}
+
+// Repository for customers and orders
+export class OrderRepository extends Context.Service<
+  OrderRepository,
+  {
+    getCustomer(id: string): Effect.Effect<unknown>;
+    listOrders(id: string): Effect.Effect<ReadonlyArray<OrderShape>>;
+  }
+>()("examples/OrderRepository") {}
+
+// Mailer used to send invoices
+export class Mailer extends Context.Service<
+  Mailer,
+  { send(to: string, invoice: InvoiceShape): Effect.Effect<void> }
+>()("examples/Mailer") {}
+
+// Helper to check whether the customer can be invoiced
+const isActive = (customer: any) => customer.status === "active";
+
+// Helper to compute the total of one order
+const totalOf = (order: OrderShape) => {
+  let total = 0;
+  for (const line of order.lines) {
+    total += line.unitAmount * line.quantity;
+  }
+  return total;
+};
+
+// Gather the totals of every order
+const gatherTotals = (orders: ReadonlyArray<OrderShape>) => orders.map(totalOf);
+
+// Build the invoice object from the totals
+const buildInvoice = (customerId: string, totals: number[], lineCount: number): InvoiceShape => ({
+  customerId,
+  total: totals.reduce((sum, total) => sum + total, 0),
+  lineCount,
+});
+
+// Loading the customer from the repository
+const loading = (id: string) =>
+  Effect.gen(function* () {
+    const repo = yield* OrderRepository;
+    const raw = yield* repo.getCustomer(id);
+    // The repository returns unknown, so cast it to the customer shape
+    return raw as unknown as CustomerShape;
+  });
+
+/**
+ * Process the invoice for one customer.
+ * @param customerId - the customer to invoice
+ * @param sendEmail - whether to email the invoice
+ * @param dryRun - whether to skip side effects
+ * @param verbose - whether to log progress
+ */
+export const processInvoice = (
+  customerId: string,
+  sendEmail: boolean,
+  dryRun: boolean,
+  verbose: boolean,
+) =>
+  Effect.gen(function* () {
+    const repo = yield* OrderRepository;
+    const mailer = yield* Mailer;
+    const customer = yield* loading(customerId);
+    if (!isActive(customer)) {
+      return null;
+    } else {
+      const orders = yield* repo.listOrders(customerId);
+      const totals = gatherTotals(orders);
+      let lineCount = 0;
+      for (const order of orders) {
+        lineCount += order.lines.length;
+      }
+      const invoice = buildInvoice(customerId, totals, lineCount);
+      if (verbose) {
+        yield* Effect.log(`built invoice for ${invoice.total}`);
+      }
+      if (!dryRun) {
+        if (sendEmail) {
+          yield* mailer.send(customer.email!, invoice);
+        }
+      }
+      return invoice;
+    }
+  });
+
+// Handler for raw requests coming from the API
+export const requestHandler = (input: unknown) => {
+  if (typeof input === "string") {
+    return processInvoice(input, true, false, false);
+  }
+  const body = input as { customerId: string; dryRun?: boolean };
+  return processInvoice(body.customerId, true, body.dryRun ?? false, false);
+};
+```
+
+With the preset, Oxlint reports 51 problems from 19 rules. Some of them, shortened:
+
+```
+before.ts:44:1   guardrails(no-comments): Comments are banned in source. Rename the thing, split the function, or model the state so the code says this.
+before.ts:45:7   guardrails(single-use-function): The function "isActive" is used once. Inline it at its only call site.
+before.ts:48:7   guardrails(suspect-of-suffix): The name "totalOf" ends in "Of", which names a projection. Prefer the noun it returns, or a verb phrase.
+before.ts:57:7   guardrails(call-chain): The chain "gatherTotals -> totalOf" is 2 private functions deep; the limit is 1.
+before.ts:67:7   guardrails(participle-function): The function "loading" is named for the state something ends in. Name the work it does.
+before.ts:72:12  anti-slop(no-chained-type-assertions): This assertion chain discards type evidence. Parse untrusted input at its boundary before narrowing it.
+before.ts:82:14  guardrails(banned-vocabulary): The name "processInvoice" contains the banned word "process".
+before.ts:84:3   guardrails(flag-argument): The parameter "sendEmail" is a boolean flag. Split the function, or pass a value whose name says what it means.
+before.ts:93:7   eslint(no-else-return): Unnecessary `else` after `return`.
+before.ts:115:39 anti-slop(no-unknown-parameters): Parameter `input` leaves input unparsed. Run the expected schema at the I/O boundary.
+before.ts:116:7  anti-slop(no-runtime-typeof): A `typeof` check narrows a representation without establishing its contract.
+```
+
+`examples/after.ts` is the same program after every report is fixed. Oxlint reports nothing.
+
+```ts
+import { Array as Arr, Context, Data, Effect, Number as Num, Schema } from "effect";
+
+export class Line extends Schema.Class<Line>("Line")({
+  sku: Schema.String,
+  unitAmount: Schema.Number,
+  quantity: Schema.Number,
+}) {}
+
+export class Order extends Schema.Class<Order>("Order")({
+  id: Schema.String,
+  lines: Schema.Array(Line),
+}) {}
+
+export class ActiveCustomer extends Schema.TaggedClass<ActiveCustomer>()("ActiveCustomer", {
+  id: Schema.String,
+  email: Schema.String,
+}) {}
+
+export class ClosedCustomer extends Schema.TaggedClass<ClosedCustomer>()("ClosedCustomer", {
+  id: Schema.String,
+}) {}
+
+export const Customer = Schema.Union([ActiveCustomer, ClosedCustomer]);
+export type Customer = typeof Customer.Type;
+
+export class Invoice extends Schema.Class<Invoice>("Invoice")({
+  customerId: Schema.String,
+  total: Schema.Number,
+  lineCount: Schema.Number,
+}) {}
+
+export class CustomerClosed extends Schema.TaggedError<CustomerClosed>()("CustomerClosed", {
+  customerId: Schema.String,
+}) {}
+
+export class Orders extends Context.Service<
+  Orders,
+  {
+    readonly customer: (id: string) => Effect.Effect<Customer>;
+    readonly forCustomer: (id: string) => Effect.Effect<ReadonlyArray<Order>>;
+  }
+>()("examples/Orders") {}
+
+export class Mail extends Context.Service<
+  Mail,
+  { readonly send: (to: string, invoice: Invoice) => Effect.Effect<void> }
+>()("examples/Mail") {}
+
+export type Delivery = Data.TaggedEnum<{
+  readonly Send: {};
+  readonly Preview: {};
+}>;
+export const Delivery = Data.taggedEnum<Delivery>();
+
+export const invoice = Effect.fn("invoice")(function* (customerId: string, delivery: Delivery) {
+  const orders = yield* Orders;
+  const mail = yield* Mail;
+
+  const customer = yield* orders.customer(customerId);
+  if (customer._tag === "ClosedCustomer") return yield* new CustomerClosed({ customerId });
+
+  const lines = Arr.flatMap(yield* orders.forCustomer(customerId), (order) => order.lines);
+  const document = new Invoice({
+    customerId,
+    total: Num.sumAll(Arr.map(lines, (line) => line.unitAmount * line.quantity)),
+    lineCount: lines.length,
+  });
+
+  return yield* Delivery.$match(delivery, {
+    Preview: () => Effect.succeed(document),
+    Send: () => Effect.as(mail.send(customer.email, document), document),
+  });
+});
+
+export class InvoiceRequest extends Schema.Class<InvoiceRequest>("InvoiceRequest")({
+  customerId: Schema.String,
+  delivery: Schema.Literals(["send", "preview"]),
+}) {}
+
+export const decodeRequest = Schema.decodeUnknownEffect(InvoiceRequest);
+
+const deliveries: Record<InvoiceRequest["delivery"], Delivery> = {
+  send: Delivery.Send(),
+  preview: Delivery.Preview(),
+};
+
+export const fromRequest = Effect.fn("fromRequest")(function* (request: InvoiceRequest) {
+  return yield* invoice(request.customerId, deliveries[request.delivery]);
+});
+```
+
+The helpers are gone, and each step sits where it is read, so the operation reads top to bottom. Customers are a tagged union, so a closed customer is a typed error instead of a `null`. The three boolean flags are one `Delivery` value with two cases. The `unknown` input is decoded with a `Schema` at the boundary, so no cast remains. Names say what a value is: `invoice`, `lines`, `document`, `deliveries`.
+
+Run `pnpm demo` to print both reports.
+
 ## How the rules work
 
 The rules use the ESTree syntax tree provided by Oxlint. They do not run a separate parser or type checker. Most checks look at one file at a time, so an exported function is treated as public even when nothing in the repository imports it.

@@ -10,7 +10,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "scripts": {
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm check:skill-assets && pnpm check:rule-tests && pnpm check:anti-slop",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm check:skill-assets && pnpm check:rule-tests && pnpm check:anti-slop && pnpm check:examples",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
@@ -20,11 +20,14 @@
     "check:skill-assets": "node scripts/sync-skill-assets.mjs --check",
     "check:rule-tests": "node scripts/check-rule-tests.mjs",
     "sync:anti-slop": "node scripts/sync-anti-slop.mjs",
-    "check:anti-slop": "node scripts/sync-anti-slop.mjs --check"
+    "check:anti-slop": "node scripts/sync-anti-slop.mjs --check",
+    "demo": "oxlint -c examples/oxlint.config.ts examples/before.ts; oxlint -c examples/oxlint.config.ts examples/after.ts",
+    "check:examples": "node scripts/check-examples.mjs"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.79.0",
     "@types/node": "26.4.1",
+    "effect": "4.0.0-rc.112",
     "oxfmt": "0.65.0",
     "oxlint": "1.79.0",
     "tsx": "4.23.13",
