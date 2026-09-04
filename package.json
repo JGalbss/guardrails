@@ -21,7 +21,7 @@
     "check:rule-tests": "node scripts/check-rule-tests.mjs",
     "sync:anti-slop": "node scripts/sync-anti-slop.mjs",
     "check:anti-slop": "node scripts/sync-anti-slop.mjs --check",
-    "demo": "oxlint -c examples/oxlint.config.ts examples/before.ts; oxlint -c examples/oxlint.config.ts examples/after.ts",
+    "demo": "oxlint -c examples/lint.config.ts examples/before.ts; oxlint -c examples/lint.config.ts examples/after.ts",
     "check:examples": "node scripts/check-examples.mjs"
   },
   "devDependencies": {

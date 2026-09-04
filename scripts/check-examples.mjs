@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const oxlint = join(root, "node_modules/.bin/oxlint");
-const config = join(root, "examples/oxlint.config.ts");
+const config = join(root, "examples/lint.config.ts");
 
 const lint = (file) => {
   const run = spawnSync(oxlint, ["-c", config, "--format=json", file], {
