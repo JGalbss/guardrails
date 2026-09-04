@@ -7,6 +7,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const plugins = [
   { index: join(root, "src/index.ts"), rules: join(root, "src/rules") },
   { index: join(root, "src/effect/index.ts"), rules: join(root, "src/effect/rules") },
+  { index: join(root, "src/anti-slop/index.ts"), rules: join(root, "src/anti-slop/rules") },
+  {
+    index: join(root, "src/anti-slop/effect/index.ts"),
+    rules: join(root, "src/anti-slop/effect/rules"),
+  },
 ];
 
 const problems = [];

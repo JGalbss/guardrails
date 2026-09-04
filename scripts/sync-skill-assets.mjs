@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -11,8 +11,7 @@ function files(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) return files(path);
-    if (entry.name.endsWith(".test.ts")) return [];
-    return extname(entry.name) === ".ts" ? [path] : [];
+    return entry.name.endsWith(".test.ts") ? [] : [path];
   });
 }
 

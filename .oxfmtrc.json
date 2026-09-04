@@ -4,5 +4,10 @@
   "singleQuote": false,
   "trailingComma": "all",
   "arrowParens": "always",
-  "ignorePatterns": ["node_modules/", "pnpm-lock.yaml"]
+  "ignorePatterns": [
+    "node_modules/",
+    "pnpm-lock.yaml",
+    "src/anti-slop/",
+    "skills/install-guardrails/assets/guardrails/anti-slop/"
+  ]
 }

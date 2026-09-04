@@ -2,7 +2,7 @@
   "name": "oxlint-plugin-guardrails",
   "version": "0.1.0",
   "private": true,
-  "description": "Oxlint rules that enforce readable TypeScript: naming, size metrics, one-use functions, call chains, comments.",
+  "description": "Oxlint rules that enforce readable TypeScript, bundled with the anti-slop rules and a recommended config.",
   "license": "MIT",
   "files": [
     "src"
@@ -10,7 +10,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "scripts": {
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm check:skill-assets && pnpm check:rule-tests",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm check:skill-assets && pnpm check:rule-tests && pnpm check:anti-slop",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
@@ -18,7 +18,9 @@
     "format:check": "oxfmt --check .",
     "sync:skill-assets": "node scripts/sync-skill-assets.mjs",
     "check:skill-assets": "node scripts/sync-skill-assets.mjs --check",
-    "check:rule-tests": "node scripts/check-rule-tests.mjs"
+    "check:rule-tests": "node scripts/check-rule-tests.mjs",
+    "sync:anti-slop": "node scripts/sync-anti-slop.mjs",
+    "check:anti-slop": "node scripts/sync-anti-slop.mjs --check"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.79.0",

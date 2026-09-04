@@ -2,7 +2,7 @@
 
 Oxlint rules that enforce readable TypeScript. The rules check naming, function size metrics, one-use functions, call chains, and comments.
 
-guardrails is vendored. There is no npm package. Copy the rules into your repository and adjust the thresholds and word lists. The bundled agent skill performs the initial copy and configuration. After that, you maintain the copied files.
+guardrails is vendored. There is no npm package. Copy the rules into your repository and adjust the thresholds and word lists. The copy also carries the anti-slop rules and a recommended configuration, so one install gives a repository its whole Oxlint setup. The bundled agent skill performs the initial copy and configuration. After that, you maintain the copied files.
 
 ## Install with an agent skill
 
@@ -10,7 +10,7 @@ guardrails is vendored. There is no npm package. Copy the rules into your reposi
 npx skills add JGalbss/guardrails --skill install-guardrails
 ```
 
-Then ask your coding agent to install guardrails in the current repository. The skill copies the plugins into `tools/oxlint/guardrails/` and registers them under `jsPlugins` in `oxlint.config.ts`. Ask the agent to enable the Effect rules too when the repository uses Effect.
+Then ask your coding agent to install guardrails in the current repository. The skill copies the plugins and the preset into `tools/oxlint/guardrails/` and writes an `oxlint.config.ts` that calls `recommended()`. Ask the agent to enable the Effect rules too when the repository uses Effect.
 
 To list the skills this repository ships:
 
@@ -22,29 +22,74 @@ npx skills add JGalbss/guardrails --list
 
 1. Copy `src/` into the repository as `tools/oxlint/guardrails/`, without the `*.test.ts` files. `skills/install-guardrails/assets/guardrails/` holds the same files with the tests already removed.
 2. Install `@oxlint/plugins` at exactly the `oxlint` version the repository resolves. This repository pins both at 1.79.0. Keep the two versions exact so an upgrade moves them together.
-3. Register the entry point and enable the rules in `oxlint.config.ts`:
+3. Write `oxlint.config.ts`:
 
 ```ts
 import { defineConfig } from "oxlint";
+import { recommended } from "./tools/oxlint/guardrails/preset.ts";
+export default defineConfig(recommended({ effect: true }));
+```
+
+`recommended()` returns a complete configuration. It enables the built-in plugins `eslint`, `typescript`, `oxc`, `unicorn`, `import`, and `promise`, and the `correctness`, `suspicious`, and `perf` categories at `error`. It reports unused disable directives. It ignores `node_modules`, the agent tool directories, and the plugin directory. It registers all four plugins, enables every rule at `error`, and adds the overrides listed under [Recommended overrides](#recommended-overrides). The options:
+
+- `root`: where the copy lives. Default `./tools/oxlint/guardrails`.
+- `effect`: enables `anti-slop-effect`, `guardrails-effect`, and `effectCoreRules`. Set it when the repository depends directly on `effect`.
+- `typeAware`: enables `typeAwareRules`. These need `oxlint-tsgolint` and `oxlint --type-aware`.
+
+All four plugins are registered whatever the flags say, so turning a rule group on later is one line. The flags decide which rules are enabled.
+
+### Picking pieces
+
+A repository with an existing config imports the pieces and merges them:
+
+```ts
+import { defineConfig } from "oxlint";
+import {
+  antiSlopRules,
+  coreRules,
+  guardrailsRules,
+  ignorePatterns,
+  overrides,
+  plugins,
+} from "./tools/oxlint/guardrails/preset.ts";
 
 export default defineConfig({
-  ignorePatterns: [
-    "node_modules/**",
-    ".agent/**",
-    ".agents/**",
-    ".claude/**",
-    ".codex/**",
-    ".continue/**",
-    ".cursor/**",
-    ".gemini/**",
-    ".opencode/**",
-    ".pi/**",
-    ".roo/**",
-    ".windsurf/**",
-    "tools/oxlint/guardrails/**",
+  plugins: ["eslint", "typescript", "oxc", "unicorn", "import", "promise"],
+  ignorePatterns: [...ignorePatterns(), "dist/**"],
+  jsPlugins: plugins(),
+  rules: { ...antiSlopRules, ...guardrailsRules, ...coreRules },
+  overrides: [...overrides(), { files: ["src/**/*.ts"], rules: { "eslint/no-ternary": "error" } }],
+});
+```
+
+| Export                                     | Contents                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `plugins(root)`                            | The four `jsPlugins` entries: `guardrails`, `guardrails-effect`, `anti-slop`, `anti-slop-effect`.       |
+| `ignorePatterns(root)`                     | `node_modules/**`, the agent tool directories, and `<root>/**`.                                         |
+| `guardrailsRules`, `guardrailsEffectRules` | Every guardrails rule at `error`; the Effect rule on its own.                                           |
+| `antiSlopRules`, `antiSlopEffectRules`     | Every anti-slop rule at `error`; the Effect rule on its own.                                            |
+| `coreRules`                                | The built-in rules under [Core rules that pair with guardrails](#core-rules-that-pair-with-guardrails). |
+| `effectCoreRules`                          | `no-underscore-dangle` allowing `_tag` and `_op`.                                                       |
+| `typeAwareRules`                           | `no-floating-promises`, `no-misused-promises`, `no-unnecessary-type-assertion`.                         |
+| `overrides()`                              | The exemptions under [Recommended overrides](#recommended-overrides).                                   |
+| `recommended(options)`                     | All of the above, merged.                                                                               |
+
+The `tools/oxlint/guardrails/**` pattern keeps the linter off its own plugin. Oxlint reads `.gitignore` to skip dependencies. In a directory without one, `node_modules/**` keeps it out of the dependency tree. The dot directories hold installed skills and agent instructions, which are not project source. Keep the ignore patterns the repository already has, and add the agent tool directories it uses.
+
+`no-comments` rejects JSDoc as well as line comments. A repository that keeps doc comments should turn the rule off for those paths, or leave it out.
+
+### `.oxlintrc.json`
+
+A JSON config cannot import the preset. Register the entry points and list the rules:
+
+```json
+{
+  "ignorePatterns": ["node_modules/**", ".claude/**", "tools/oxlint/guardrails/**"],
+  "jsPlugins": [
+    { "name": "guardrails", "specifier": "./tools/oxlint/guardrails/index.ts" },
+    { "name": "anti-slop", "specifier": "./tools/oxlint/guardrails/anti-slop/index.ts" }
   ],
-  jsPlugins: [{ name: "guardrails", specifier: "./tools/oxlint/guardrails/index.ts" }],
-  rules: {
+  "rules": {
     "guardrails/abc-size": "error",
     "guardrails/banned-vocabulary": "error",
     "guardrails/call-chain": "error",
@@ -58,13 +103,26 @@ export default defineConfig({
     "guardrails/similar-functions": "error",
     "guardrails/single-use-function": "error",
     "guardrails/suspect-of-suffix": "error",
-  },
-});
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-runtime-typeof": "error",
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error"
+  }
+}
 ```
 
-The `tools/oxlint/guardrails/**` pattern keeps the linter off its own plugin. Oxlint reads `.gitignore` to skip dependencies. In a directory without one, `node_modules/**` keeps it out of the dependency tree. The dot directories hold installed skills and agent instructions, which are not project source. Keep the ignore patterns the repository already has, and add the agent tool directories it uses.
-
-`no-comments` rejects JSDoc as well as line comments. A repository that keeps doc comments should turn the rule off for those paths, or leave it out.
+Add the other agent tool directories from `ignorePatterns()` and the core rules from `coreRules` as the repository needs them.
 
 ## Optional Effect rules
 
@@ -83,6 +141,29 @@ export default defineConfig({
 ```
 
 Its one rule targets tagged state unions built with effect-machine's `State(...)`. Enable it when the codebase builds state machines that way. The check is by name, so any call to `State.with` is reported.
+
+`recommended({ effect: true })` enables this rule, together with the anti-slop Effect rule and `effectCoreRules`.
+
+## Bundled anti-slop rules
+
+`src/anti-slop/` is a verbatim copy of the anti-slop repository at https://github.com/dmmulroy/anti-slop, MIT licensed, at the commit recorded in `src/anti-slop/UPSTREAM`. The rule ids stay `anti-slop/*` and `anti-slop-effect/*`, so the [upstream README](https://github.com/dmmulroy/anti-slop#readme) documents them. Maintainers of this repository refresh the copy with `pnpm sync:anti-slop`. Nobody edits it by hand.
+
+- `no-chained-type-assertions` rejects nested `as` and angle-bracket assertions that fabricate evidence; chains made only of `as const` remain valid.
+- `no-conditional-empty-object-spread` reports object spreads that use a conditional `{}` branch to omit fields. It intentionally has no autofix because omission is not equivalent to assigning `undefined`.
+- `no-known-value-widening` rejects known expressions flowing into explicit `unknown`, `object`, anonymous-object, or open-dictionary targets, including known arguments passed to local `unknown` type predicates. Empty dictionary accumulators and finite-key `Record` targets remain valid.
+- `no-module-mocking` rejects Vitest and Jest `mock`, `doMock`, and `unstable_mockModule` calls in favor of real dependency seams.
+- `no-object-parameters` rejects `object`, unions containing it, and scoped or transparent generic aliases that resolve to it on function inputs.
+- `no-reflect-apply` rejects global `Reflect.apply` in favor of typed function calls.
+- `no-reflect-get` rejects global `Reflect.get` in favor of typed property access or boundary parsing.
+- `no-runtime-typeof` requires boundary parsing instead of ad hoc `typeof` narrowing. Existence probes against the string `"undefined"` are allowed, and type predicates can be enabled explicitly.
+- `no-shape-in-symbol-names` rejects the case-insensitive substring `shape` in locally owned symbol names while allowing static member names such as Zod's `schema.shape` that cannot be renamed locally.
+- `no-unknown-parameters` rejects `unknown` and unions containing it on function inputs except the explicit `cause` convention and the exact subject of a type predicate.
+- `no-unknown-returns` rejects explicit function contracts that resolve to `unknown`, `Promise<unknown>`, or `PromiseLike<unknown>`, including scoped and transparent generic aliases.
+- `no-unknown-type-aliases` rejects scoped and transparent generic aliases whose resolved type is `unknown`.
+- `no-unsafe-dictionary-type` rejects dictionary value contracts based on `unknown`, `any`, `object`, `{}`, and semantic equivalents. Generic constraints such as `T extends Record<string, unknown>` are allowed.
+- `no-widen-then-assert` rejects immutable local flows that widen known evidence to `unknown`, `any`, `object`, or a broad record and later assert it back to a narrower type.
+- `require-safety-comment-for-type-assertion` requires each non-const assertion to have a nearby, non-empty invariant justification. Marker prefixes are configurable and default to `SAFETY`.
+- `anti-slop-effect/no-service-constructor-imports` rejects named `make<CapabilityName>` imports from relative project modules outside `*.test.*` and `*.spec.*` files. Runtime callers should import the owning Layer and yield the contextual service instead. Package and path-alias imports, default imports, and static constructors such as `WorkspaceName.make` are outside the rule.
 
 ## Rules
 
@@ -133,35 +214,36 @@ To tune a threshold for another repository, start at a value that flags nothing 
 
 ## Core rules that pair with guardrails
 
-Guardrails cover what Oxlint's built-in rules do not. These built-in rules carry the rest of the same standard:
+Guardrails cover what Oxlint's built-in rules do not. The built-in rules that carry the rest of the same standard ship in `preset.ts` as `coreRules`, `effectCoreRules`, and `typeAwareRules`. `recommended()` enables `coreRules` always, `effectCoreRules` with `effect: true`, and `typeAwareRules` with `typeAware: true`.
 
 ```ts
-export default defineConfig({
-  plugins: ["eslint", "typescript", "unicorn", "import"],
-  rules: {
-    "eslint/no-else-return": ["error", { allowElseIf: false }],
-    "eslint/no-lonely-if": "error",
-    "unicorn/no-negated-condition": "error",
-    "eslint/max-params": ["error", 3],
-    "eslint/max-nested-callbacks": ["error", 5],
-    "eslint/max-depth": ["error", 3],
-    "eslint/complexity": ["error", 22],
-    "eslint/max-lines": ["error", 500],
-    "import/max-dependencies": ["error", { max: 18 }],
-    "import/no-default-export": "error",
-    "typescript/consistent-type-imports": "error",
-    "typescript/no-explicit-any": "error",
-    "typescript/explicit-module-boundary-types": "error",
-    "typescript/no-non-null-assertion": "error",
-    "typescript/switch-exhaustiveness-check": "error",
-  },
-  overrides: [
-    {
-      files: ["src/**/*.ts"],
-      rules: { "eslint/no-ternary": "error" },
-    },
-  ],
-});
+export const coreRules = {
+  "eslint/max-params": ["error", 3],
+  "eslint/max-nested-callbacks": ["error", 5],
+  "eslint/no-else-return": ["error", { allowElseIf: false }],
+  "eslint/no-lonely-if": "error",
+  "unicorn/no-negated-condition": "error",
+  "import/max-dependencies": ["error", { max: 18 }],
+  "eslint/complexity": ["error", 22],
+  "eslint/max-depth": ["error", 3],
+  "eslint/max-lines": ["error", 500],
+  "import/no-default-export": "error",
+  "typescript/consistent-type-imports": "error",
+  "typescript/no-explicit-any": "error",
+  "typescript/explicit-module-boundary-types": "error",
+  "typescript/no-non-null-assertion": "error",
+  "typescript/switch-exhaustiveness-check": "error",
+};
+
+export const effectCoreRules = {
+  "eslint/no-underscore-dangle": ["error", { allow: ["_tag", "_op"] }],
+};
+
+export const typeAwareRules = {
+  "typescript/no-floating-promises": "error",
+  "typescript/no-misused-promises": "error",
+  "typescript/no-unnecessary-type-assertion": "error",
+};
 ```
 
 - `no-else-return`, `no-lonely-if` and `no-negated-condition` push code toward early returns. The reader takes one condition at a time and never holds an open brace in mind.
@@ -169,55 +251,55 @@ export default defineConfig({
 - `max-nested-callbacks` at 5 and `max-depth` at 3 cap nesting where the size metrics do not.
 - `import/no-default-export`: a named export gives a symbol one name across the codebase.
 - `import/max-dependencies` at 18: more imports than that in one module means the subsystem is fragmented.
-- `no-ternary` on `.ts` files only. In an Effect codebase `Option.match`, `Match` and `Bool.match` carry the decision, so a ternary is a missing domain decision. JSX is excluded on purpose: a ternary there shows both branches, which `cond && <X />` does not.
+- `no-underscore-dangle` with `_tag` and `_op` allowed: Effect uses both as discriminators on tagged unions, schemas, and errors. They are a framework contract, not private-member names.
+- `switch-exhaustiveness-check` and the three `typeAwareRules` need Oxlint's type-aware mode: `oxlint --type-aware` with `oxlint-tsgolint` installed. Without it they are silent.
 
-`switch-exhaustiveness-check` needs Oxlint's type-aware mode: `oxlint --type-aware` with `oxlint-tsgolint` installed. Without it the rule is silent.
-
-### Recommended overrides
-
-The globs are examples. Replace them with the paths the repository owns.
+`eslint/no-ternary` is not in the preset because it is path-specific. In an Effect codebase `Option.match`, `Match` and `Bool.match` carry the decision, so a ternary is a missing domain decision. Enable it on `.ts` files only. JSX is excluded on purpose: a ternary there shows both branches, which `cond && <X />` does not.
 
 ```ts
 overrides: [
   {
-    files: ["**/*.config.ts", "**/*.config.mts", "**/*.config.js", "**/*.config.mjs"],
-    rules: { "import/no-default-export": "off", "guardrails/no-comments": "off" },
+    files: ["src/**/*.ts"],
+    rules: { "eslint/no-ternary": "error" },
+  },
+],
+```
+
+### Recommended overrides
+
+`overrides()` returns these four, and `recommended()` includes them.
+
+```ts
+overrides: [
+  {
+    files: ["**/test/**", "**/tests/**", "**/*.test.ts", "**/*.test.tsx", "**/scripts/**"],
+    rules: {
+      "guardrails/maintainability-index": "off",
+      "guardrails/abc-size": "off",
+      "typescript/explicit-module-boundary-types": "off",
+    },
   },
   {
-    files: ["**/scripts/**", "tools/**"],
-    rules: {
-      "typescript/explicit-module-boundary-types": "off",
-      "import/no-default-export": "off",
-      "guardrails/no-comments": "off",
-    },
+    files: ["**/*.config.ts", "**/*.config.mts", "**/*.config.js", "**/*.config.mjs"],
+    rules: { "import/no-default-export": "off", "guardrails/no-comments": "off" },
   },
   {
     files: ["**/generated/**"],
     rules: { "guardrails/no-comments": "off" },
   },
   {
-    files: ["**/test/**", "**/*.test.ts", "**/*.test.tsx", "**/scripts/**"],
-    rules: { "guardrails/maintainability-index": "off", "guardrails/abc-size": "off" },
-  },
-  {
-    files: ["**/layers.ts", "**/test/**"],
+    files: ["**/layers.ts", "**/test/**", "**/tests/**", "**/*.test.ts", "**/*.test.tsx", "**/scripts/**"],
     rules: { "import/max-dependencies": "off" },
-  },
-  {
-    files: ["**/icons/**", "**/ui/**"],
-    rules: { "eslint/no-ternary": "off", "guardrails/similar-functions": "off" },
   },
 ],
 ```
 
-- Config files: a build tool reads a default export. That is the tool's contract.
-- Scripts and tools: build scripts, which are not shipped source.
+- Tests and scripts: a test is a scenario, and one long body per case is the honest shape. A test fixture is not a module boundary; its types are inferred from what it composes. A script is not shipped source. The size metrics stay on for source.
+- Config files: a build tool reads a default export. That is the tool's contract. A config file explains its choices in comments.
 - Generated files: a generator wrote them.
-- Tests and scripts: a test is a scenario, and one long body per case is the honest shape. The size metrics stay on for source.
 - Composition roots and test harnesses fan out by design.
-- View-layer directories (adjust the globs to the repository): an icon component is identical markup around different path data by design, and a view layer models no domain state that a tagged union would clarify.
 
-A declaration file that mirrors a third party's names, such as a generated `env.d.ts`, gets `"guardrails/banned-vocabulary": "off"`.
+Two more are common and path-specific, so the preset leaves them to you. View-layer directories get `"eslint/no-ternary": "off"` and `"guardrails/similar-functions": "off"`. An icon component is identical markup around different path data by design. A view layer models no domain state that a tagged union would clarify. A declaration file that mirrors a third party's names, such as a generated `env.d.ts`, gets `"guardrails/banned-vocabulary": "off"`.
 
 ## Violation examples
 
@@ -436,10 +518,14 @@ pnpm install
 pnpm check
 ```
 
-`src/` is canonical. Each rule file has a `.test.ts` beside it, and `pnpm check:rule-tests` fails when a rule lacks one or is missing from its plugin index. After a change to `src/`, run `pnpm sync:skill-assets`. It refreshes `skills/install-guardrails/assets/guardrails/`, the copy the skill installs, and CI fails when the two differ. `pnpm check` runs the format check, Oxlint, the TypeScript typecheck, the tests, the skill-asset check and the rule-test check.
+`src/` is canonical. Each rule file has a `.test.ts` beside it, and `pnpm check:rule-tests` fails when a rule lacks one or is missing from its plugin index. After a change to `src/`, run `pnpm sync:skill-assets`. It refreshes `skills/install-guardrails/assets/guardrails/`, the copy the skill installs, and CI fails when the two differ. `src/preset.test.ts` fails when a rule object in `preset.ts` stops matching the rules its plugin index registers.
+
+`src/anti-slop/` is upstream code. `pnpm sync:anti-slop` clones the upstream repository, replaces the directory, and rewrites `UPSTREAM`. `pnpm check:anti-slop` verifies that `UPSTREAM` names a commit and that the entry points and license are present. The directory is excluded from `oxlint` and `oxfmt`, and its tests run with ours.
+
+`pnpm check` runs the format check, Oxlint, the TypeScript typecheck, the tests, the skill-asset check, the rule-test check and the anti-slop check.
 
 Pinned versions: `oxlint` and `@oxlint/plugins` 1.79.0, TypeScript 7.0.2, oxfmt 0.65.0, Node 24, pnpm 10.28.1.
 
-## License
+## Licenses
 
-MIT. See `LICENSE`.
+guardrails is MIT licensed. See `LICENSE`. The bundled anti-slop rules under `src/anti-slop/` are MIT licensed by their upstream. See `src/anti-slop/LICENSE`.

@@ -28,7 +28,16 @@ cpSync(source, target, { recursive: true });
 
 const relativeTarget = relative(process.cwd(), target).split(sep).join("/");
 const specifier = relativeTarget.startsWith(".") ? relativeTarget : `./${relativeTarget}`;
-console.log(`Copied the guardrails plugins to ${target}`);
-console.log("Register them in oxlint.config.ts under jsPlugins:");
-console.log(`  { name: "guardrails", specifier: "${specifier}/index.ts" }`);
-console.log(`  { name: "guardrails-effect", specifier: "${specifier}/effect/index.ts" }`);
+console.log(`Copied the guardrails and anti-slop plugins to ${target}`);
+console.log("Suggested oxlint.config.ts:");
+console.log("");
+console.log('  import { defineConfig } from "oxlint";');
+console.log(`  import { recommended } from "${specifier}/preset.ts";`);
+console.log("  export default defineConfig(recommended({ effect: true }));");
+console.log("");
+console.log("Pass { effect: true } only when the repository depends directly on effect.");
+if (specifier !== "./tools/oxlint/guardrails") {
+  console.log(
+    `Pass { root: "${specifier}" } as well, because the plugins are not at the default path.`,
+  );
+}

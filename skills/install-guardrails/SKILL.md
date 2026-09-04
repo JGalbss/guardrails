@@ -1,12 +1,12 @@
 ---
 name: install-guardrails
-description: Install the guardrails Oxlint plugins in a TypeScript repository and register their rules. Use when a user asks to add guardrails lint rules, readability rules, naming rules, or function size metrics, or asks to install, copy, or configure the guardrails oxlint plugin.
+description: Install the guardrails Oxlint plugins, the bundled anti-slop rules, and the recommended Oxlint configuration in a TypeScript repository. Use when a user asks to add guardrails lint rules, readability rules, naming rules, function size metrics, or anti-slop rules. Also use when a user asks to install, copy, or configure the guardrails oxlint plugin.
 license: MIT
 ---
 
 # Install guardrails
 
-Guardrails is two Oxlint plugins written with `defineRule` over the ESTree AST. The `guardrails` plugin holds thirteen readability rules: naming, function size metrics, one-use functions, call chains, and comments. The `guardrails-effect` plugin holds one rule for codebases that build tagged state unions with effect-machine. This skill copies both plugins into the target repository, pins the dependency, and registers the rules. Keep unrelated work intact and match the repository's package manager and config style.
+One copy installs four Oxlint plugins and a preset. The `guardrails` plugin holds thirteen readability rules: naming, function size metrics, one-use functions, call chains, and comments. The `guardrails-effect` plugin holds one rule for codebases that build tagged state unions with effect-machine. The `anti-slop` plugin holds fifteen rules that reject low-evidence TypeScript, and `anti-slop-effect` holds one rule about Effect service imports. `preset.ts` holds the recommended configuration as code. This skill copies the directory, pins the dependency, and writes or merges the config. Keep unrelated work intact and match the repository's package manager and config style.
 
 ## Procedure
 
@@ -15,15 +15,16 @@ Guardrails is two Oxlint plugins written with `defineRule` over the ESTree AST. 
    - Run `git status`. Leave unrelated changes alone.
    - Read `packageManager` in `package.json` and the lockfile to identify the package manager.
    - Find the Oxlint config: `oxlint.config.ts`, `.oxlintrc.json`, or none.
+   - Check whether a `package.json` in the repository lists `effect` under `dependencies`. A transitive `effect` in the lockfile does not count.
    - Check for an existing `tools/oxlint/guardrails/`. When it exists, diff it against `<skill-directory>/assets/guardrails/` before you replace it.
 
-2. Copy the plugins. Run from the repository root:
+2. Copy the plugins and the preset. Run from the repository root:
 
    ```bash
    node <skill-directory>/scripts/install.mjs
    ```
 
-   The script copies `assets/guardrails/` to `tools/oxlint/guardrails/` and prints the two `jsPlugins` entries to register. Pass a relative path as the first argument to copy somewhere else. The script exits with code 1 when the destination already exists. `--force` deletes the destination and copies again; use it only after the review in step 1.
+   The script copies `assets/guardrails/` to `tools/oxlint/guardrails/` and prints the suggested `oxlint.config.ts`. Pass a relative path as the first argument to copy somewhere else. The script exits with code 1 when the destination already exists. `--force` deletes the destination and copies again; use it only after the review in step 1.
 
 3. Install the dependencies with the repository's package manager, as `devDependencies`.
    - When the repository already depends on `oxlint`, read the installed version from the lockfile and add `@oxlint/plugins` at exactly that version.
@@ -31,51 +32,52 @@ Guardrails is two Oxlint plugins written with `defineRule` over the ESTree AST. 
    - Pin both exactly, with no range prefix. The two packages move together.
    - Do not change other dependency ranges and do not change the package manager.
 
-4. Register the plugin and the ignore patterns. Merge these fields into the existing config and keep every existing ignore:
+4. Write the configuration.
+
+   When the repository has no Oxlint config, write `oxlint.config.ts`:
 
    ```ts
-   ignorePatterns: [
-     "node_modules/**",
-     ".agent/**",
-     ".agents/**",
-     ".claude/**",
-     ".codex/**",
-     ".continue/**",
-     ".cursor/**",
-     ".gemini/**",
-     ".opencode/**",
-     ".pi/**",
-     ".roo/**",
-     ".windsurf/**",
-     "tools/oxlint/guardrails/**",
-   ],
-   jsPlugins: [{ name: "guardrails", specifier: "./tools/oxlint/guardrails/index.ts" }],
+   import { defineConfig } from "oxlint";
+   import { recommended } from "./tools/oxlint/guardrails/preset.ts";
+   export default defineConfig(recommended({ effect: true }));
    ```
 
-   Keep `node_modules/**` even when `.gitignore` lists it. Oxlint reads `.gitignore` to skip dependencies, and a directory without one needs the pattern.
-   Change the last pattern and the specifier when step 2 used another path. Add any other directory the repository keeps for agent tooling, so installed skills and hooks are not linted as application source. Do not ignore every dot-directory; some repositories keep source or checks in one. `.oxlintrc.json` takes the same two fields as JSON.
+   Pass `effect: true` only when step 1 found a direct `effect` dependency. Otherwise call `recommended()`. Pass `root: "<path>"` when step 2 copied to another path, with the same `./` prefix the specifier uses. Pass `typeAware: true` only when the repository runs `oxlint --type-aware` with `oxlint-tsgolint` installed.
 
-5. Enable every guardrails rule at `error`:
+   `recommended()` returns a complete config. It enables the built-in plugins `eslint`, `typescript`, `oxc`, `unicorn`, `import`, and `promise`. It sets the `correctness`, `suspicious`, and `perf` categories and `reportUnusedDisableDirectives` to `error`. It ignores `node_modules`, the agent tool directories, and the plugin directory. It registers all four `jsPlugins`, enables every rule at `error`, and adds the standard overrides. All four plugins are registered whatever the flags say. The flags decide which rules are enabled.
 
-   ```json
-   {
-     "guardrails/abc-size": "error",
-     "guardrails/banned-vocabulary": "error",
-     "guardrails/call-chain": "error",
-     "guardrails/cognitive-complexity": "error",
-     "guardrails/flag-argument": "error",
-     "guardrails/halstead-difficulty": "error",
-     "guardrails/maintainability-index": "error",
-     "guardrails/nested-match": "error",
-     "guardrails/no-comments": "error",
-     "guardrails/participle-function": "error",
-     "guardrails/similar-functions": "error",
-     "guardrails/single-use-function": "error",
-     "guardrails/suspect-of-suffix": "error"
-   }
+   When the repository already has an `oxlint.config.ts`, merge the pieces into it and keep everything it has:
+
+   ```ts
+   import { defineConfig } from "oxlint";
+   import {
+     antiSlopRules,
+     coreRules,
+     guardrailsRules,
+     ignorePatterns,
+     overrides,
+     plugins,
+   } from "./tools/oxlint/guardrails/preset.ts";
+
+   export default defineConfig({
+     plugins: ["eslint", "typescript", "oxc", "unicorn", "import", "promise"],
+     ignorePatterns: [...ignorePatterns(), "dist/**"],
+     jsPlugins: plugins(),
+     rules: { ...antiSlopRules, ...guardrailsRules, ...coreRules },
+     overrides: [...overrides()],
+   });
    ```
 
-   Every threshold and word list is a rule option with a default. Leave the options out to keep the defaults. To change one, pass an object as the second element, for example `"guardrails/abc-size": ["error", { "ceiling": 40 }]`.
+   - `plugins(root)` returns the four `jsPlugins` entries. Add them to the existing list.
+   - `ignorePatterns(root)` returns `node_modules/**`, the agent tool directories, and the plugin directory. Keep every existing ignore. Keep `node_modules/**` even when `.gitignore` lists it, because a directory without one needs the pattern. Do not ignore every dot-directory; some repositories keep source or checks in one.
+   - The rule objects are `antiSlopRules`, `guardrailsRules`, `coreRules`, and the opt-in `antiSlopEffectRules`, `guardrailsEffectRules`, `effectCoreRules`, and `typeAwareRules`. Spread the Effect groups only when step 1 found a direct `effect` dependency. Spread `typeAwareRules` only under `oxlint --type-aware`.
+   - `overrides()` returns the standard exemptions for tests, scripts, config files, generated files, and composition roots. Put them before the repository's own overrides.
+   - When an existing rule conflicts with a preset rule, keep the repository's value and report the difference.
+   - The `import` rules need `"import"` in `plugins`. Add it when it is missing.
+
+   When the repository uses `.oxlintrc.json`, JSON cannot import the preset. Offer to convert the file to `oxlint.config.ts`. When the user declines, copy the values by hand: the four `jsPlugins` entries, the ignore patterns, and every rule id from `preset.ts` at `"error"`. Leave out the Effect groups when the repository has no direct `effect` dependency.
+
+5. Keep the default options unless the user asks for a change. Every threshold and word list is a rule option with a default. To change one, pass an object as the second element, for example `"guardrails/abc-size": ["error", { "ceiling": 40 }]`. With `recommended()`, add the entry under `rules` in a spread after the preset: `{ ...recommended().rules, "guardrails/abc-size": ["error", { ceiling: 40 }] }`.
 
    | Rule                    | Option       | Default                                               |
    | ----------------------- | ------------ | ----------------------------------------------------- |
@@ -93,47 +95,9 @@ Guardrails is two Oxlint plugins written with `defineRule` over the ESTree AST. 
    | `similar-functions`     | `minTokens`  | `30`                                                  |
    | `single-use-function`   | `maxLength`  | `900`                                                 |
 
-   `flag-argument` and `suspect-of-suffix` take no options.
+   `flag-argument` and `suspect-of-suffix` take no options. `guardrails-effect/no-union-state-with` takes `unions`, default `["State"]`; pass the repository's union names when they differ. The anti-slop options are documented in the upstream README linked from `README.md`: `no-runtime-typeof` takes `allowInTypeGuards`, and `require-safety-comment-for-type-assertion` takes `markers`.
 
-6. Offer the companion rules and overrides. Apply them when the user agrees, or when the repository has no policy that conflicts with them. The `import` rules need `"import"` in the config's `plugins` list; `eslint`, `typescript`, and `unicorn` are on by default.
-
-   ```json
-   {
-     "eslint/complexity": ["error", 22],
-     "eslint/max-depth": ["error", 3],
-     "eslint/max-lines": ["error", 500],
-     "eslint/max-nested-callbacks": ["error", 5],
-     "eslint/max-params": ["error", 3],
-     "eslint/no-else-return": ["error", { "allowElseIf": false }],
-     "eslint/no-lonely-if": "error",
-     "unicorn/no-negated-condition": "error",
-     "import/max-dependencies": ["error", { "max": 18 }],
-     "import/no-default-export": "error",
-     "typescript/consistent-type-imports": "error",
-     "typescript/explicit-module-boundary-types": "error",
-     "typescript/no-explicit-any": "error",
-     "typescript/no-non-null-assertion": "error"
-   }
-   ```
-
-   Add `"typescript/switch-exhaustiveness-check": "error"` only when the repository runs Oxlint with `--type-aware`; the rule needs type information.
-
-   A test reads as one scenario per case. A script is not shipped source. Both are exempt from the two whole-function size metrics. Build tools read a default export from a config file, and a config file explains its choices in comments:
-
-   ```ts
-   overrides: [
-     {
-       files: ["**/test/**", "**/tests/**", "**/*.test.ts", "**/*.test.tsx", "**/scripts/**"],
-       rules: { "guardrails/abc-size": "off", "guardrails/maintainability-index": "off" },
-     },
-     {
-       files: ["**/*.config.ts", "**/*.config.mts", "**/*.config.js", "**/*.config.mjs"],
-       rules: { "import/no-default-export": "off", "guardrails/no-comments": "off" },
-     },
-   ],
-   ```
-
-   When the repository uses a pattern-matching library such as Effect's `Match` or `Option.match`, or the user's standards ban ternaries, offer this override as well. It covers `.ts` only: JSX needs a ternary so both branches stay visible.
+6. Offer the `eslint/no-ternary` override when the repository uses a pattern-matching library such as Effect's `Match` or `Option.match`, or when the user's standards ban ternaries. It covers `.ts` only: JSX needs a ternary so both branches stay visible.
 
    ```ts
    {
@@ -142,31 +106,19 @@ Guardrails is two Oxlint plugins written with `defineRule` over the ESTree AST. 
    },
    ```
 
-7. Register `guardrails-effect` only when a `package.json` in the repository lists `effect` under `dependencies`, or when the user asks for it. A transitive `effect` in the lockfile does not count. Merge these entries with the ones from steps 4 and 5:
-
-   ```ts
-   jsPlugins: [
-     { name: "guardrails-effect", specifier: "./tools/oxlint/guardrails/effect/index.ts" },
-   ],
-   rules: {
-     "guardrails-effect/no-union-state-with": "error",
-   },
-   ```
-
-   The rule reports `State.with(...)`, the union-level `.with` whose partial is typed as `unknown`. It matches by identifier name. When the repository names its state unions differently, pass them in `unions`, for example `["error", { "unions": ["State", "Phase"] }]`.
-
-8. Run the repository's lint and typecheck commands from `package.json`. Report findings in owned source. Fix them only when the user asked for a cleanup. Every fix follows these rules:
+7. Run the repository's lint and typecheck commands from `package.json`. Report findings in owned source. Fix them only when the user asked for a cleanup. Every fix follows these rules:
    - Never disable a rule, lower a severity, add a cast, or add a disable directive to make lint pass.
    - When `abc-size`, `cognitive-complexity`, `halstead-difficulty`, or `maintainability-index` fires, split the function along a boundary it already has, or replace a run of boolean checks with a tagged state and one classification.
    - When `single-use-function` fires, inline the function at its one call site. Do not export it and do not add a second call.
    - When `call-chain` fires, inline the inner private function into its caller.
    - When `banned-vocabulary`, `participle-function`, or `suspect-of-suffix` fires, rename the identifier for what it is or what it does.
    - When `no-comments` fires, rename the thing, split the function, or model the state so the code carries the note. Keep the comment only when it records a constraint the code cannot express, and put `// oxlint-disable-next-line guardrails/no-comments` above it.
+   - When an `anti-slop` rule fires, parse the value at its boundary or keep the precise type. Add a `SAFETY:` comment only when it states an invariant the code checks.
 
-9. Review the final diff and report:
+8. Review the final diff and report:
    - the path the plugins were copied to,
    - the `oxlint` and `@oxlint/plugins` versions installed,
-   - the config files and fields changed,
+   - the config files and fields changed, and which rule groups are enabled,
    - the checks run, and every remaining finding with its file and rule.
 
 ## Tuning
@@ -177,3 +129,7 @@ The default thresholds were measured on one large codebase. Change a threshold o
 2. Run `oxlint --format=json` and collect the scores from the messages.
 3. Pick the threshold from the distribution, for example the 95th percentile, and round it.
 4. Record the percentile, the threshold, the function count, and the date in a comment next to the option in the config. Discard the scratch config.
+
+## Maintenance
+
+`pnpm sync:anti-slop` refreshes the anti-slop copy inside the guardrails repository itself. It is for that repository's maintainers, not for consumers. A consumer updates a vendored copy by installing the skill again and re-running `install.mjs --force`.
