@@ -1,0 +1,35 @@
+{
+  "name": "oxlint-plugin-guardrails",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Oxlint rules that keep code readable: naming, size metrics, one-use functions, call chains, comments.",
+  "license": "MIT",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm check:skill-assets && pnpm check:rule-tests",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "sync:skill-assets": "node scripts/sync-skill-assets.mjs",
+    "check:skill-assets": "node scripts/sync-skill-assets.mjs --check",
+    "check:rule-tests": "node scripts/check-rule-tests.mjs"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.79.0",
+    "@types/node": "26.4.1",
+    "oxfmt": "0.65.0",
+    "oxlint": "1.79.0",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.28.1"
+}
