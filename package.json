@@ -2,7 +2,7 @@
   "name": "oxlint-plugin-guardrails",
   "version": "0.1.0",
   "private": true,
-  "description": "Oxlint rules that keep code readable: naming, size metrics, one-use functions, call chains, comments.",
+  "description": "Oxlint rules that enforce readable TypeScript: naming, size metrics, one-use functions, call chains, comments.",
   "license": "MIT",
   "files": [
     "src"
