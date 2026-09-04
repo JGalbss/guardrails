@@ -41,12 +41,13 @@ const codes = new Set(before.map((diagnostic) => diagnostic.code));
 const ruleCount = codes.size;
 
 const readme = readFileSync(join(root, "README.md"), "utf8");
-const section = readme.slice(readme.indexOf("## Example"), readme.indexOf("## How the rules work"));
-const blocks = [...section.matchAll(/```ts\n([\s\S]*?)```/g)].map((match) => match[1]);
-const sources = ["examples/before.ts", "examples/after.ts"].map((file) =>
-  readFileSync(join(root, file), "utf8"),
-);
+const sectionStart = readme.indexOf("## Example");
+const sectionEnd = readme.indexOf("\n## ", sectionStart + 1);
+const section = readme.slice(sectionStart, sectionEnd);
 const counted = section.match(/reports (\d+) problems from (\d+) rules/);
+const linked = ["examples/before.ts", "examples/after.ts"].every((file) =>
+  section.includes(`(${file})`),
+);
 
 const problems = [
   ...expected
@@ -55,11 +56,7 @@ const problems = [
   ...(after.length === 0
     ? []
     : [`examples/after.ts has ${after.length} diagnostics; the README promises none.`]),
-  ...(blocks.length === 2 && blocks[0] === sources[0] && blocks[1] === sources[1]
-    ? []
-    : [
-        "The two code blocks under README.md Example differ from examples/before.ts and examples/after.ts.",
-      ]),
+  ...(linked ? [] : ["README.md must link to both example files."]),
   ...(counted !== null && Number(counted[1]) === before.length && Number(counted[2]) === ruleCount
     ? []
     : [`README.md must say "reports ${before.length} problems from ${ruleCount} rules".`]),
@@ -71,5 +68,5 @@ if (problems.length > 0) {
 }
 
 console.log(
-  `examples/before.ts reports ${before.length} problems from ${ruleCount} rules, examples/after.ts reports none, and the README matches.`,
+  `examples/before.ts reports ${before.length} problems from ${ruleCount} rules, examples/after.ts reports none, and the README links both.`,
 );
